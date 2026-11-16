@@ -1,13 +1,11 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 
+// ⚠️ METS TON NUMÉRO ICI, avec 237 devant, sans + et sans espace
+const ADMIN_NUMBER = '237651143293';
+const GROUP_NAME = 'A où V';
 
-// ⚠️ METS TON NUMÉRO ICI, sans + et sans espace. Exemple pour Cameroun : 237690000000
-const ADMIN_NUMBER = '237651143293'; 
-const GROUP_NAME = 'A où V'; // Mets le nom exact de ton groupe de jeu
-
-let participants = []; // ceux qui ont fait !join
-let usedPairs = new Set(); // pour ne jamais refaire la même combinaison
-let gameOpen = false;
+let participants = [];
+let usedPairs = new Set();
 
 const verites = [
   "C'est quoi ton plus gros secret que personne dans le groupe ne connait ?",
@@ -30,43 +28,33 @@ const client = new Client({
     puppeteer: { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] }
 });
 
-client.initialize().then(async () => {
-    setTimeout(async () => {
-        const code = await client.requestPairingCode(ADMIN_NUMBER);
-        console.log('TON CODE EST :', code);
-    }, 5000);
-});
+// ICI C'EST LE CODE, PAS LE QR
+client.on('ready', () => console.log('Bot pret !'));
 
 client.on('message', async (msg) => {
     const chat = await msg.getChat();
-    if (!chat.isGroup) return; // JAMAIS en privé
-    if (chat.name !== GROUP_NAME && GROUP_NAME !== 'TON NOM DE GROUPE') return; // Uniquement ton groupe
+    if (!chat.isGroup) return;
+    if (chat.name !== GROUP_NAME) return;
 
     const sender = msg.author || msg.from;
     const senderNumber = sender.replace('@c.us','');
     const isAdmin = senderNumber === ADMIN_NUMBER;
     const text = msg.body.trim().toLowerCase();
 
-    // !join - TOUT LE MONDE PEUT
     if (text === '!join') {
-        if (participants.includes(senderNumber)) {
-            return msg.reply(`Tu es déjà inscrit @${senderNumber}`);
-        }
+        if (participants.includes(senderNumber)) return msg.reply(`Tu es déjà inscrit @${senderNumber}`);
         participants.push(senderNumber);
         return msg.reply(`✅ Tu es inscrit ! Il y a ${participants.length} joueurs pour 20h.`);
     }
 
-    // !joueurs - VOIR LA LISTE (admin seulement)
     if (text === '!joueurs' && isAdmin) {
-        return msg.reply(`Joueurs inscrits (${participants.length}) :\n` + participants.map(p => '@'+p).join('\n'));
+        return msg.reply(`Joueurs (${participants.length}) :\n` + participants.map(p => '@'+p).join('\n'));
     }
 
-    // !duo - SEUL TOI PEUT LANCER
     if (text === '!duo') {
-        if (!isAdmin) return; // Les autres sont ignorés, le bot ne répond pas
-        if (participants.length < 2) return msg.reply('Pas assez de joueurs. Il faut au moins 2 personnes qui ont fait !join');
+        if (!isAdmin) return;
+        if (participants.length < 2) return msg.reply('Pas assez de joueurs. Il faut au moins 2 qui ont fait !join');
 
-        // Choisir 2 au hasard sans répéter la combinaison
         let duo = null;
         let essais = 0;
         while (essais < 100) {
@@ -74,52 +62,43 @@ client.on('message', async (msg) => {
             let b = participants[Math.floor(Math.random() * participants.length)];
             if (a === b) continue;
             let key = [a,b].sort().join('|');
-            if (!usedPairs.has(key)) {
-                usedPairs.add(key);
-                duo = [a,b];
-                break;
-            }
+            if (!usedPairs.has(key)) { usedPairs.add(key); duo = [a,b]; break; }
             essais++;
         }
-        if (!duo) {
-            usedPairs.clear();
-            return msg.reply('On a fait toutes les combinaisons ! On recommence à zéro. Ret tape !duo');
-        }
+        if (!duo) { usedPairs.clear(); return msg.reply('On a fait toutes les combinaisons ! Retape !duo'); }
 
         const verite = verites[Math.floor(Math.random() * verites.length)];
         const action = actions[Math.floor(Math.random() * actions.length)];
 
-        return msg.reply(
-`🎲 **DUO TIRÉ AU SORT** 🎲\n\n` +
-`@${duo[0]} VS @${duo[1]}\n\n` +
-`@${duo[0]} pose à @${duo[1]} :\n👉 VÉRITÉ : ${verite}\n\n` +
-`@${duo[1]} pose à @${duo[0]} :\n👉 ACTION : ${action}\n\n` +
-`Vous avez 2 minutes ! Le patron tape !duo pour le prochain duo.`
-        );
+        return msg.reply(`🎲 **DUO TIRÉ AU SORT** 🎲\n\n@${duo[0]} VS @${duo[1]}\n\n@${duo[0]} pose à @${duo[1]} :\n👉 VÉRITÉ : ${verite}\n\n@${duo[1]} pose à @${duo[0]} :\n👉 ACTION : ${action}\n\nVous avez 2 minutes ! Patron tape !duo pour le prochain.`);
     }
 
-    // !reset - SEUL TOI, pour vider les inscrits
     if (text === '!reset' && isAdmin) {
-        participants = [];
-        usedPairs.clear();
+        participants = []; usedPairs.clear();
         return msg.reply('Jeu réinitialisé. Tout le monde doit refaire !join');
     }
 
-    // !jouer - SEUL TOI
     if (text === '!jouer' && isAdmin) {
-        gameOpen = true;
-        return msg.reply('🎮 JEU OUVERT ! Tout le monde tape !join avant 20h. À 20h, je lance les duos !');
+        return msg.reply('🎮 JEU OUVERT ! Tout le monde tape !join avant 20h.');
     }
 });
 
-// Jeu automatique à 20h précise (Heure Douala)
+// Demande le CODE à 8 chiffres au lieu du QR
+client.initialize().then(async () => {
+    setTimeout(async () => {
+        try {
+            const code = await client.requestPairingCode(ADMIN_NUMBER);
+            console.log('TON CODE EST :', code);
+        } catch(e) { console.log('Erreur code:', e.message); }
+    }, 5000);
+});
+
+// Jeu auto à 20h Douala
 setInterval(async () => {
     const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Douala' }));
     if (now.getHours() === 20 && now.getMinutes() === 0 && now.getSeconds() < 10) {
         const chats = await client.getChats();
         const group = chats.find(c => c.isGroup && c.name === GROUP_NAME);
-        if (group) group.sendMessage(`⏰ 20H PILE ! LE JEU COMMENCE !\n${participants.length} joueurs inscrits.\nPatron, tape !duo pour lancer le premier duo !`);
+        if (group) group.sendMessage(`⏰ 20H PILE ! LE JEU COMMENCE !\n${participants.length} joueurs inscrits.\nPatron, tape !duo !`);
     }
 }, 10000);
-
-client.initialize();
