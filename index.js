@@ -1,5 +1,5 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+
 
 // ⚠️ METS TON NUMÉRO ICI, sans + et sans espace. Exemple pour Cameroun : 237690000000
 const ADMIN_NUMBER = '237651143293'; 
@@ -30,8 +30,12 @@ const client = new Client({
     puppeteer: { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'] }
 });
 
-client.on('qr', qr => qrcode.generate(qr, {small: true}));
-client.on('ready', () => console.log('Bot pret !'));
+client.initialize().then(async () => {
+    setTimeout(async () => {
+        const code = await client.requestPairingCode(ADMIN_NUMBER);
+        console.log('TON CODE EST :', code);
+    }, 5000);
+});
 
 client.on('message', async (msg) => {
     const chat = await msg.getChat();
